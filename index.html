@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>加5計時器</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Red+Hat+Mono:wght@400;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+/* 版面:單欄操作台,上方輸入、下方依剩餘時間排序的計時卡 */
+:root {
+  --bg: #eef2f1;
+  --surface: #ffffff;
+  --line: #d3dcda;
+  --fg: #16201e;
+  --muted: #5d6d6a;
+  --accent: #0e6b66;
+  --accent-soft: #d6ebe8;
+  --warn: #b86a00;
+  --warn-soft: #fbecd2;
+  --done: #c0352a;
+  --done-soft: #f9dcd8;
+  --mono: "Red Hat Mono", ui-monospace, "Consolas", monospace;
+  --sans: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111615; --surface: #1a2120; --line: #2c3634; --fg: #e4ecea; --muted: #8fa09c;
+  --accent: #4fc2b8; --accent-soft: #163a37; --warn: #f0a63a; --warn-soft: #3a2c14;
+  --done: #ff7a6b; --done-soft: #44201c; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111615; --surface: #1a2120; --line: #2c3634; --fg: #e4ecea; --muted: #8fa09c;
+  --accent: #4fc2b8; --accent-soft: #163a37; --warn: #f0a63a; --warn-soft: #3a2c14;
+  --done: #ff7a6b; --done-soft: #44201c; color-scheme: dark }
+
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); }
+.wrap { max-width: 600px; margin: 0 auto; padding-block: 28px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 20px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: .02em; }
+h1 b { font-family: var(--mono); color: var(--accent); }
+.head-btns { display: flex; gap: 8px; }
+button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--fg); padding: 6px 12px; font-size: 14px; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+#cancelAll { color: var(--done); border-color: var(--done); font-weight: 700; }
+#cancelAll:disabled { opacity: .4; cursor: default; }
+
+.entry { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.entry label { font-size: 13px; color: var(--muted); }
+#entry { font-family: var(--mono); font-size: 40px; font-weight: 600; letter-spacing: .12em; width: 100%; box-sizing: border-box;
+  padding: 8px 12px; border-radius: 8px; border: 2px solid var(--line); background: var(--bg); color: var(--fg); }
+#entry.bad { border-color: var(--done); }
+#preview { font-family: var(--mono); font-size: 15px; min-height: 1.4em; color: var(--muted); font-variant-numeric: tabular-nums; }
+#preview .ok { color: var(--accent); font-weight: 600; }
+#preview .err { color: var(--done); }
+.rules { font-size: 13px; color: var(--muted); line-height: 1.7; margin: 0; }
+.rules code { font-family: var(--mono); color: var(--fg); background: var(--bg); padding: 0 4px; border-radius: 4px; }
+#soundNote { font-size: 13px; color: var(--warn); }
+
+#list { display: flex; flex-direction: column; gap: 10px; }
+.empty { color: var(--muted); font-size: 14px; text-align: center; padding: 24px 0; border: 1px dashed var(--line); border-radius: 12px; }
+.timer { position: relative; overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px 14px 14px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 12px; }
+.timer .remain { font-family: var(--mono); font-size: 36px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.timer .meta { grid-column: 1; font-size: 13px; color: var(--muted); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.timer .x { grid-row: 1 / span 2; grid-column: 2; }
+.timer .bar { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--accent); width: 100%; transform-origin: left; }
+.timer.warn { background: var(--warn-soft); border-color: var(--warn); }
+.timer.warn .remain { color: var(--warn); }
+.timer.warn .bar { background: var(--warn); }
+.timer.done { background: var(--done-soft); border-color: var(--done); animation: pulse 1s steps(2) infinite; }
+.timer.done .remain { color: var(--done); }
+.timer.done .bar { display: none; }
+@keyframes pulse { 50% { border-color: transparent; } }
+@media (prefers-reduced-motion: reduce) { .timer.done { animation: none; } }
+@media (max-width: 420px) { #entry { font-size: 32px; } .timer .remain { font-size: 30px; } }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>加<b>5</b>計時器</h1>
+    <div class="head-btns">
+      <button id="testSound" type="button">測試聲音</button>
+      <button id="cancelAll" type="button" disabled>全部取消</button>
+    </div>
+  </header>
+
+  <form class="entry" id="form" autocomplete="off">
+    <label for="entry">輸入時間(hmmss,1~5 位數),按 Enter 開始</label>
+    <input id="entry" inputmode="numeric" maxlength="6" placeholder="130" autofocus>
+    <div id="preview" aria-live="polite"></div>
+    <p class="rules">
+      數字由右往左對齊:<code>30</code> = 30 秒、<code>130</code> = 1 分 30 秒、<code>2000</code> = 20 分、<code>10000</code> = 1 小時。<br>
+      預設再加 5 分鐘;結尾加 <code>-</code>(如 <code>130-</code>)就不加。<br>
+      最後 15 秒每秒嗶一聲,到期響一聲。
+    </p>
+    <div id="soundNote" hidden>聲音尚未啟用:在頁面上點一下或按任一鍵。</div>
+  </form>
+
+  <div id="list"><div class="empty" id="empty">還沒有計時。輸入例如 <b>130</b> 按 Enter,會倒數 6:30。</div></div>
+</div>
+
+<script>
+(() => {
+  const PLUS = 300; // 加 5 分鐘
+  const $ = id => document.getElementById(id);
+  const form = $('form'), entry = $('entry'), preview = $('preview'), list = $('list'), empty = $('empty');
+  let timers = [];
+
+  // ---- 解析 ----
+  function parse(raw) {
+    const m = /^(\d{1,5})(-?)$/.exec(raw.trim());
+    if (!m) return null;
+    const d = m[1].padStart(5, '0');
+    const base = (+d[0]) * 3600 + (+d.slice(1, 3)) * 60 + (+d.slice(3, 5));
+    const add = m[2] ? 0 : PLUS;
+    return { base, add, total: base + add, input: raw.trim() };
+  }
+  function fmt(sec) {
+    sec = Math.max(0, Math.round(sec));
+    const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+    return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+  }
+  function clock(ms) {
+    const d = new Date(ms);
+    return d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  }
+
+  // ---- 聲音:用 AudioContext 時間軸預排,背景分頁也準 ----
+  const AC = window.AudioContext || window.webkitAudioContext;
+  let ctx = null;
+  function getCtx() {
+    if (!AC) return null;
+    if (!ctx) { try { ctx = new AC(); } catch (e) { return null; } }
+    return ctx;
+  }
+  function unlock() {
+    const c = getCtx(); if (!c) return;
+    if (c.state !== 'running') c.resume().then(() => { scheduleAll(); updateSoundNote(); }).catch(() => {});
+  }
+  function updateSoundNote() {
+    $('soundNote').hidden = !(timers.length && (!ctx || ctx.state !== 'running'));
+  }
+  function tone(at, freq, dur, vol) {
+    const c = ctx;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = 'square'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(vol, at + 0.005);
+    g.gain.setValueAtTime(vol, at + dur - 0.02);
+    g.gain.linearRampToValueAtTime(0, at + dur);
+    o.connect(g); g.connect(c.destination);
+    o.start(at); o.stop(at + dur + 0.02);
+    return g;
+  }
+  function unschedule(t) {
+    (t.nodes || []).forEach(n => { try { n.disconnect(); } catch (e) {} });
+    t.nodes = [];
+  }
+  function schedule(t) {
+    unschedule(t);
+    if (!ctx || ctx.state !== 'running') return;
+    const now = Date.now(), base = ctx.currentTime;
+    const at = ms => base + (ms - now) / 1000;
+    for (let s = 15; s >= 1; s--) {
+      const ms = t.end - s * 1000;
+      if (ms > now) t.nodes.push(tone(at(ms), s <= 5 ? 1040 : 880, 0.09, 0.12));
+    }
+    if (t.end > now) t.nodes.push(tone(at(t.end), 1320, 0.25, 0.2));
+  }
+  function scheduleAll() { timers.forEach(schedule); }
+
+  // ---- 計時卡 ----
+  function makeCard(t) {
+    const el = document.createElement('div');
+    el.className = 'timer';
+    el.innerHTML = '<div class="remain"></div><div class="meta"></div><button class="x" type="button">取消</button><div class="bar"></div>';
+    el.querySelector('.meta').textContent =
+      `輸入 ${t.input} → ${fmt(t.total)}${t.add ? '(含 +5:00)' : ''} · ${clock(t.end)} 到期`;
+    el.querySelector('.x').addEventListener('click', () => remove(t.id));
+    t.el = el;
+  }
+  function add(p) {
+    const t = { id: Date.now() + Math.random(), input: p.input, total: p.total, add: p.add, end: Date.now() + p.total * 1000, nodes: [] };
+    makeCard(t);
+    timers.push(t);
+    schedule(t);
+    render();
+  }
+  function remove(id) {
+    const t = timers.find(x => x.id === id); if (!t) return;
+    unschedule(t); t.el.remove();
+    timers = timers.filter(x => x.id !== id);
+    render();
+  }
+  function cancelAll() {
+    timers.forEach(t => { unschedule(t); t.el.remove(); });
+    timers = []; render(); entry.focus();
+  }
+  function render() {
+    timers.sort((a, b) => a.end - b.end);
+    timers.forEach(t => list.appendChild(t.el));
+    empty.hidden = timers.length > 0;
+    $('cancelAll').disabled = timers.length === 0;
+    updateSoundNote();
+    tick();
+  }
+  function tick() {
+    const now = Date.now();
+    let next = null;
+    timers.forEach(t => {
+      const left = (t.end - now) / 1000;
+      const done = left <= 0;
+      t.el.classList.toggle('done', done);
+      t.el.classList.toggle('warn', !done && left <= 15);
+      t.el.querySelector('.remain').textContent = done ? `時間到 +${fmt(-left)}` : fmt(Math.ceil(left));
+      t.el.querySelector('.bar').style.transform = `scaleX(${Math.max(0, left / t.total)})`;
+      t.el.querySelector('.x').textContent = done ? '清除' : '取消';
+      if (!done && (next === null || left < next)) next = left;
+    });
+    const anyDone = timers.some(t => t.end <= now);
+    document.title = anyDone ? '⏰ 時間到 · 加5計時器' : next !== null ? `${fmt(Math.ceil(next))} · 加5計時器` : '加5計時器';
+  }
+
+  // ---- 輸入 ----
+  entry.addEventListener('input', () => {
+    const v = entry.value.trim();
+    entry.classList.remove('bad');
+    if (!v) { preview.textContent = ''; return; }
+    const p = parse(v);
+    if (!p) { preview.innerHTML = '<span class="err">只接受 1~5 位數字,結尾可加 -</span>'; return; }
+    preview.innerHTML = p.add
+      ? `${fmt(p.base)} + 5:00 = <span class="ok">${fmt(p.total)}</span>`
+      : `${fmt(p.base)}(不加 5)= <span class="ok">${fmt(p.total)}</span>`;
+  });
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    unlock();
+    const p = parse(entry.value);
+    if (!p || p.total <= 0) { entry.classList.add('bad'); entry.select(); return; }
+    add(p);
+    entry.value = ''; preview.textContent = ''; entry.focus();
+  });
+  $('cancelAll').addEventListener('click', cancelAll);
+  $('testSound').addEventListener('click', () => {
+    unlock();
+    const c = getCtx(); if (!c) return;
+    const go = () => { const t0 = c.currentTime + 0.05; tone(t0, 880, 0.09, 0.12); tone(t0 + 0.4, 1320, 0.25, 0.2); };
+    c.state === 'running' ? go() : c.resume().then(go).catch(() => {});
+  });
+  ['pointerdown', 'keydown'].forEach(ev => window.addEventListener(ev, unlock, { passive: true }));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleAll(); });
+
+  render();
+  setInterval(tick, 200);
+})();
+</script>
+</body>
+</html>
